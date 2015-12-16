@@ -35,6 +35,7 @@
 #include "thr_lock.h"                    /* THR_LOCK, THR_LOCK_DATA */
 #include "handler.h"                     /* handler */
 #include "my_base.h"                     /* ha_rows */
+#include "hdfs.h"
 
 /** @brief
   Example_share is a class that will be shared among all open handlers.
@@ -59,11 +60,11 @@ class ha_hdcsv: public handler
   Example_share *share;    ///< Shared lock info
   Example_share *get_share(); ///< Get the share
 
+  hdfsFS fs;
+
 public:
   ha_hdcsv(handlerton *hton, TABLE_SHARE *table_arg);
-  ~ha_hdcsv()
-  {
-  }
+  ~ha_hdcsv();
 
   /** @brief
     The name that will be used for display purposes.

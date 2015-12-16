@@ -164,8 +164,16 @@ static handler* hdcsv_create_handler(handlerton *hton,
 
 ha_hdcsv::ha_hdcsv(handlerton *hton, TABLE_SHARE *table_arg)
   :handler(hton, table_arg)
-{}
+{
+  fs = hdfsConnectNewInstance("0.0.0.0:19000", 0);
+  if (!fs) {
+	fprintf(stderr, "Oops! Failed to connect to hdfs!\n");
+  }
+}
 
+ha_hdcsv::~ha_hdcsv(){
+  hdfsDisconnect(fs);
+}
 
 /**
   @brief
@@ -883,6 +891,19 @@ int ha_hdcsv::create(const char *name, TABLE *table_arg,
     This is not implemented but we want someone to be able to see that it
     works.
   */
+  int len = strlen(name);
+  char *writePath = (char *)malloc((len + 5) * sizeof(char));
+  sprintf(writePath, "%s.CSV", name);
+  hdfsFile writeFile = hdfsOpenFile(fs, writePath, O_WRONLY | O_CREAT, 0, 0, 0);
+  if (!writeFile) {
+	fprintf(stderr, "Failed to open %s for writing!\n", writePath);
+	DBUG_RETURN(1);
+  }
+  if (hdfsFlush(fs, writeFile)) {
+	fprintf(stderr, "Failed to flush %s\n", writePath);
+	DBUG_RETURN(1);
+  }
+  hdfsCloseFile(fs, writeFile);
   DBUG_RETURN(0);
 }
 
