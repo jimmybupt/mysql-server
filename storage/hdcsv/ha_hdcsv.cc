@@ -169,10 +169,13 @@ ha_hdcsv::ha_hdcsv(handlerton *hton, TABLE_SHARE *table_arg)
   if (!fs) {
 	fprintf(stderr, "Oops! Failed to connect to hdfs!\n");
   }
+  buffer = NULL;
+  buffer = (char *)malloc(1024 * sizeof(char));
 }
 
 ha_hdcsv::~ha_hdcsv(){
   hdfsDisconnect(fs);
+  if (buffer)free(buffer);
 }
 
 /**
@@ -286,6 +289,20 @@ int ha_hdcsv::open(const char *name, int mode, uint test_if_locked)
     DBUG_RETURN(1);
   thr_lock_data_init(&share->lock,&lock,NULL);
 
+  int len = strlen(name);
+  char *filePath = (char *)malloc((len + 5) * sizeof(char));
+  sprintf(filePath, "%s.CSV", name);
+  if (mode == O_RDWR){
+	/*hdfs can only append*/
+	mode = O_APPEND;
+  }
+  dataFile = hdfsOpenFile(fs, filePath, mode, 0, 0, 0);
+
+  if (!dataFile){
+	free(filePath);
+	DBUG_RETURN(1);
+  }
+  free(filePath);
   DBUG_RETURN(0);
 }
 
@@ -308,6 +325,7 @@ int ha_hdcsv::open(const char *name, int mode, uint test_if_locked)
 int ha_hdcsv::close(void)
 {
   DBUG_ENTER("ha_hdcsv::close");
+  hdfsCloseFile(fs, dataFile);
   DBUG_RETURN(0);
 }
 
@@ -524,6 +542,7 @@ int ha_hdcsv::index_last(uchar *buf)
 int ha_hdcsv::rnd_init(bool scan)
 {
   DBUG_ENTER("ha_hdcsv::rnd_init");
+  current_position = next_position = 0;
   DBUG_RETURN(0);
 }
 
@@ -554,12 +573,60 @@ int ha_hdcsv::rnd_next(uchar *buf)
   DBUG_ENTER("ha_hdcsv::rnd_next");
   MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
                        TRUE);
-  rc= HA_ERR_END_OF_FILE;
+  //if (!share->mapped_file)
+  //	DBUG_RETURN(HA_ERR_END_OF_FILE);
+  if (HA_ERR_END_OF_FILE != (rc = find_current_row(buf))){
+	rc = 0;
+  }
   MYSQL_READ_ROW_DONE(rc);
   DBUG_RETURN(rc);
 }
 
+int ha_hdcsv::get_line(){
+  //TODO: make buffered read/write
+  DBUG_ENTER("ha_hdcsv::get_line");
+  int num_read_bytes = hdfsPread(fs, dataFile, current_position, 
+	(void*)buffer, 1024 * sizeof(char));
+  if (num_read_bytes <= 0)
+	DBUG_RETURN(HA_ERR_END_OF_FILE);
+  int i = 0;
+  //ignore leading newlines
+  while (buffer[i] == '\n' || buffer[i] == '\r')
+	i++;
+  int begin = i;
+  if (i == num_read_bytes)
+	DBUG_RETURN(HA_ERR_END_OF_FILE);
+  for (; i < num_read_bytes; i++){
+	if (buffer[i] == '\n' || buffer[i] == '\r'){
+	  buffer[i] == '\0';
+	  break;
+	}
+  }
+  int end = i;
+  current_position = current_position + end;
+  memcpy(buffer, buffer + begin, (end - begin) + 1);
+  DBUG_RETURN(0);
+}
 
+int ha_hdcsv::find_current_row(uchar *buf)
+{
+  
+  DBUG_ENTER("ha_hdcsv::find_current_row");
+  int ret;
+  if (ret = get_line()){
+	DBUG_RETURN(ret);
+  }
+  char * pch = strtok(buffer, ",");
+  for (Field **field = table->field; *field; field++)
+  {
+	pch = strtok(NULL, ",");
+	(*field)->store(pch, strlen(pch), system_charset_info);
+  }
+
+  memset(buf, 0, table->s->null_bytes); /* We do not implement nulls! */
+
+  DBUG_RETURN(0);
+}
 /**
   @brief
   position() is called after each call to rnd_next() if the data needs
@@ -654,6 +721,7 @@ int ha_hdcsv::rnd_pos(uchar *buf, uchar *pos)
 int ha_hdcsv::info(uint flag)
 {
   DBUG_ENTER("ha_hdcsv::info");
+  stats.records = 2;
   DBUG_RETURN(0);
 }
 
@@ -894,16 +962,19 @@ int ha_hdcsv::create(const char *name, TABLE *table_arg,
   int len = strlen(name);
   char *writePath = (char *)malloc((len + 5) * sizeof(char));
   sprintf(writePath, "%s.CSV", name);
-  hdfsFile writeFile = hdfsOpenFile(fs, writePath, O_WRONLY | O_CREAT, 0, 0, 0);
+  hdfsFile writeFile = hdfsOpenFile(fs, writePath, O_WRONLY | O_CREAT, 0, 1, 0);
   if (!writeFile) {
 	fprintf(stderr, "Failed to open %s for writing!\n", writePath);
+	free(writePath);
 	DBUG_RETURN(1);
   }
   if (hdfsFlush(fs, writeFile)) {
 	fprintf(stderr, "Failed to flush %s\n", writePath);
+	free(writePath);
 	DBUG_RETURN(1);
   }
   hdfsCloseFile(fs, writeFile);
+  free(writePath);
   DBUG_RETURN(0);
 }
 

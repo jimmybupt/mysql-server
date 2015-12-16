@@ -61,6 +61,12 @@ class ha_hdcsv: public handler
   Example_share *get_share(); ///< Get the share
 
   hdfsFS fs;
+  hdfsFile dataFile;
+
+  my_off_t current_position;  /* Current position in the file during a file scan */
+  my_off_t next_position;     /* Next position in the file scan */
+
+  char * buffer;
 
 public:
   ha_hdcsv(handlerton *hton, TABLE_SHARE *table_arg);
@@ -240,6 +246,8 @@ public:
   int rnd_init(bool scan);                                      //required
   int rnd_end();
   int rnd_next(uchar *buf);                                     ///< required
+  int find_current_row(uchar *buf);
+  int get_line();
   int rnd_pos(uchar *buf, uchar *pos);                          ///< required
   void position(const uchar *record);                           ///< required
   int info(uint);                                               ///< required
