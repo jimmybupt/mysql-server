@@ -91,6 +91,7 @@
 #include "ha_hdcsv.h"
 #include "probes_mysql.h"
 #include "sql_plugin.h"
+#include "hdfs.h"
 
 static handler *hdcsv_create_handler(handlerton *hton,
                                        TABLE_SHARE *table, 

@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,10 +13,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-SET(EXAMPLE_PLUGIN_DYNAMIC "ha_example")
-SET(EXAMPLE_SOURCES ha_example.cc)
-IF(WITH_EXAMPLE_STORAGE_ENGINE AND NOT WITHOUT_EXAMPLE_STORAGE_ENGINE)
-  MYSQL_ADD_PLUGIN(example ${EXAMPLE_SOURCES} STORAGE_ENGINE DEFAULT)
-ELSEIF(NOT WITHOUT_EXAMPLE_STORAGE_ENGINE)
-  MYSQL_ADD_PLUGIN(example ${EXAMPLE_SOURCES} STORAGE_ENGINE MODULE_ONLY)
-ENDIF()
+SET(HDCSV_SOURCES  ha_hdcsv.cc ha_hdcsv.h)
+MYSQL_ADD_PLUGIN(hdcsv ${HDCSV_SOURCES} STORAGE_ENGINE
+RECOMPILE_FOR_EMBEDDED)
