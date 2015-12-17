@@ -294,7 +294,7 @@ int ha_hdcsv::open(const char *name, int mode, uint test_if_locked)
   sprintf(filePath, "%s.CSV", name);
   if (mode == O_RDWR){
 	/*hdfs can only append*/
-	mode = O_APPEND;
+	mode = O_WRONLY | O_APPEND;
   }
   dataFile = hdfsOpenFile(fs, filePath, mode, 0, 0, 0);
 
@@ -369,6 +369,28 @@ int ha_hdcsv::write_row(uchar *buf)
     probably need to do something with 'buf'. We report a success
     here, to pretend that the insert was successful.
   */
+  char attribute_buffer[1024];
+  String attribute(attribute_buffer, sizeof(attribute_buffer),
+	&my_charset_bin);
+  char *ptr = buffer;
+  my_bitmap_map *org_bitmap = 
+	dbug_tmp_use_all_columns(table, table->read_set);
+  for (Field **field = table->field; *field; field++){
+	(*field)->val_str(&attribute, &attribute);
+	memcpy(ptr, attribute.ptr(), attribute.length());
+	ptr = ptr + attribute.length();
+	*ptr = ',';
+	ptr++;
+  }
+  ptr--;
+  *ptr++ = '\n';
+  *ptr = '\0';
+  int written = hdfsWrite(fs, dataFile, (void*) buffer,
+	strlen(buffer));
+  hdfsFlush(fs, dataFile);
+  dbug_tmp_restore_column_map(table->read_set, org_bitmap);
+  if (written != strlen(buffer))
+	DBUG_RETURN(HA_ERR_ERRORS);
   DBUG_RETURN(0);
 }
 
