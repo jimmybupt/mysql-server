@@ -292,10 +292,12 @@ int ha_hdcsv::open(const char *name, int mode, uint test_if_locked)
   int len = strlen(name);
   char *filePath = (char *)malloc((len + 5) * sizeof(char));
   sprintf(filePath, "%s.CSV", name);
+  strcpy(fileName, filePath);
   if (mode == O_RDWR){
 	/*hdfs can only append*/
 	mode = O_WRONLY | O_APPEND;
   }
+  fileMode = mode;
   dataFile = hdfsOpenFile(fs, filePath, mode, 0, 0, 0);
 
   if (!dataFile){
@@ -375,6 +377,14 @@ int ha_hdcsv::write_row(uchar *buf)
   char *ptr = buffer;
   my_bitmap_map *org_bitmap = 
 	dbug_tmp_use_all_columns(table, table->read_set);
+
+  if (fileMode & O_RDONLY){
+	hdfsCloseFile(fs, dataFile);
+	dataFile = hdfsOpenFile(fs, fileName, O_WRONLY | O_APPEND, 0, 0, 0);
+	if (!fs)DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+	fileMode = O_WRONLY | O_APPEND;
+  }
+
   for (Field **field = table->field; *field; field++){
 	(*field)->val_str(&attribute, &attribute);
 	memcpy(ptr, attribute.ptr(), attribute.length());
@@ -597,6 +607,13 @@ int ha_hdcsv::rnd_next(uchar *buf)
                        TRUE);
   //if (!share->mapped_file)
   //	DBUG_RETURN(HA_ERR_END_OF_FILE);
+  if (fileMode & O_WRONLY){
+	hdfsCloseFile(fs, dataFile);
+	dataFile = hdfsOpenFile(fs, fileName, O_RDONLY, 0, 0, 0);
+	if (!fs)DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+	fileMode = O_RDONLY;
+  }
+
   if (HA_ERR_END_OF_FILE != (rc = find_current_row(buf))){
 	rc = 0;
   }
@@ -620,7 +637,7 @@ int ha_hdcsv::get_line(){
 	DBUG_RETURN(HA_ERR_END_OF_FILE);
   for (; i < num_read_bytes; i++){
 	if (buffer[i] == '\n' || buffer[i] == '\r'){
-	  buffer[i] == '\0';
+	  buffer[i] = '\0';
 	  break;
 	}
   }
@@ -639,14 +656,15 @@ int ha_hdcsv::find_current_row(uchar *buf)
 	DBUG_RETURN(ret);
   }
   char * pch = strtok(buffer, ",");
+  my_bitmap_map *org_bitmap = dbug_tmp_use_all_columns(table, table->write_set);
   for (Field **field = table->field; *field; field++)
   {
-	pch = strtok(NULL, ",");
 	(*field)->store(pch, strlen(pch), system_charset_info);
+	pch = strtok(NULL, ",");
   }
-
+  
   memset(buf, 0, table->s->null_bytes); /* We do not implement nulls! */
-
+  dbug_tmp_restore_column_map(table->write_set, org_bitmap);
   DBUG_RETURN(0);
 }
 /**

@@ -62,6 +62,8 @@ class ha_hdcsv: public handler
 
   hdfsFS fs;
   hdfsFile dataFile;
+  int fileMode;
+  char fileName[1024];
 
   my_off_t current_position;  /* Current position in the file during a file scan */
   my_off_t next_position;     /* Next position in the file scan */
